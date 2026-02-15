@@ -16,7 +16,7 @@ extension PongViewController {
 
     func animateBallHit(at point: CGPoint) {
         let ballHitView = UIView()
-        ballHitView.backgroundColor = UIColor.white.withAlphaComponent(0.3)
+        ballHitView.backgroundColor = UIColor(red: 0.74, green: 0.98, blue: 0.98, alpha: 0.35)
 
         view.addSubview(ballHitView)
         view.sendSubviewToBack(ballHitView)

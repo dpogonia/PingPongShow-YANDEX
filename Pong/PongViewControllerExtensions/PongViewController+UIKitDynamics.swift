@@ -69,6 +69,8 @@ extension PongViewController: UICollisionBehaviorDelegate {
         with item2: UIDynamicItem,
         at p: CGPoint
     ) {
+        guard !isMatchOver else { return }
+
         /// Пытаемся опеределить являются ли столкнувшиеся объекты элементами отображения
         guard
             let view1 = item1 as? UIView,
@@ -103,6 +105,8 @@ extension PongViewController: UICollisionBehaviorDelegate {
         withBoundaryIdentifier identifier: NSCopying?,
         at p: CGPoint
     ) {
+        guard !isMatchOver else { return }
+
         // NOTE: Пытаемся опеределить по тэгу, является ли объект столкновения мячом
         guard
             identifier == nil,
@@ -118,18 +122,23 @@ extension PongViewController: UICollisionBehaviorDelegate {
             // значит мяч ударился о верхнюю грань экрана
             //
             // Увеличиваем счет игрока
-            userScore += 1
+            registerUserPoint()
             shouldResetBall = true
             print("Ball has hit enemy side. User score is now: \(userScore)")
         } else if abs(p.y - view.bounds.height) <= Constants.contactThreshold {
             // NOTE: Если место столкновения близко к нижней границе,
             // значит мяч ударился о нижнюю грань экрана
+            registerEnemyPoint()
             shouldResetBall = true
-            print("Ball has hit user side.")
+            print("Ball has hit user side. Enemy score is now: \(enemyScore)")
         }
 
         if shouldResetBall {
-            resetBallWithAnimation()
+            if isMatchOver {
+                finishMatch()
+            } else {
+                resetBallWithAnimation()
+            }
             playHitSound(.high)
             rigidImpactFeedbackGenerator.impactOccurred()
         } else {
@@ -162,6 +171,49 @@ extension PongViewController: UICollisionBehaviorDelegate {
 extension PongViewController {
 
     // MARK: - Reset Ball
+
+    private func registerUserPoint() {
+        userScore += 1
+        if userScore >= Constants.matchPointsToWin {
+            isMatchOver = true
+        }
+    }
+
+    private func registerEnemyPoint() {
+        enemyScore += 1
+        if enemyScore >= Constants.matchPointsToWin {
+            isMatchOver = true
+        }
+    }
+
+    private func finishMatch() {
+        stopBallMovement()
+        hasLaunchedBall = true
+        shouldLaunchBallOnNextTap = false
+
+        let winner = userScore > enemyScore ? "You" : "CPU"
+        let message = "Final score: \(userScore):\(enemyScore)"
+        let alertController = UIAlertController(
+            title: "\(winner) wins",
+            message: message,
+            preferredStyle: .alert
+        )
+        alertController.addAction(
+            UIAlertAction(title: "Play again", style: .default) { [weak self] _ in
+                self?.restartMatch()
+            }
+        )
+        present(alertController, animated: true)
+    }
+
+    private func restartMatch() {
+        userScore = 0
+        enemyScore = 0
+        isMatchOver = false
+        shouldLaunchBallOnNextTap = true
+        hasLaunchedBall = false
+        resetBallViewPositionAndAnimateBallAppear()
+    }
 
     /// Эта функция останавливает движение мяча и сбрасывает мяч его положение на середину экрана
     private func resetBallWithAnimation() {

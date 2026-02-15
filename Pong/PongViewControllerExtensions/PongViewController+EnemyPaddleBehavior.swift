@@ -29,9 +29,12 @@ extension PongViewController {
             // NOTE: Считаем тики таймера и "замедляем" платформу противника
             self.enemyPaddleUpdatesCounter += 1
             var diffFactor: CGFloat = 1.0
-            if self.enemyPaddleUpdatesCounter == 8 {
+            let slowdownInterval = self.cpuDifficulty.slowdownInterval
+            if slowdownInterval > 0, self.enemyPaddleUpdatesCounter >= slowdownInterval {
                 self.enemyPaddleUpdatesCounter = 0
-                diffFactor = 0.2
+                diffFactor = self.cpuDifficulty.slowdownFactor
+            } else if slowdownInterval == 0 {
+                self.enemyPaddleUpdatesCounter = 0
             }
 
             let platformWidthRatio = self.enemyPaddleView.frame.width / self.view.bounds.width
@@ -42,9 +45,18 @@ extension PongViewController {
             let maxX: CGFloat = self.view.bounds.width * (1 - platformWidthRatio)
 
             let diff = ballCenterX - paddleCenterX
-            let clampedDiff = min(max(diff, -Constants.enemyPaddleMaxSpeed), Constants.enemyPaddleMaxSpeed) * diffFactor
+            let enemyMaxSpeed = self.currentEnemyPaddleMaxSpeed()
+            let clampedDiff = min(max(diff, -enemyMaxSpeed), enemyMaxSpeed) * diffFactor
             self.enemyPaddleView.frame.origin.x = min(max(paddleLeftX + clampedDiff, minX), maxX)
             self.dynamicAnimator?.updateItem(usingCurrentState: self.enemyPaddleView)
         }
+    }
+
+    private func currentEnemyPaddleMaxSpeed() -> CGFloat {
+        let difficultyLevel = max(0, userScore + enemyScore - 2)
+        let baseSpeed = Constants.enemyPaddleMaxSpeed * cpuDifficulty.speedMultiplier
+        let speedGrowth = CGFloat(difficultyLevel) * Constants.enemyPaddleDifficultyStep * cpuDifficulty.progressionMultiplier
+        let maxSpeedCap = Constants.enemyPaddleMaxSpeedCap * cpuDifficulty.speedCapMultiplier
+        return min(baseSpeed + speedGrowth, maxSpeedCap)
     }
 }

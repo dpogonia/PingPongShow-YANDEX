@@ -17,6 +17,108 @@ import AVFoundation
 ///
 class PongViewController: UIViewController {
 
+    // MARK: - Nested Types
+
+    private enum DefaultsKey {
+        static let bestScore = "bestUserScore"
+        static let cpuDifficulty = "cpuDifficulty"
+    }
+
+    private enum GameStyle {
+        static let fieldBackgroundTopColor = UIColor(red: 0.05, green: 0.11, blue: 0.21, alpha: 1.0)
+        static let fieldBackgroundBottomColor = UIColor(red: 0.01, green: 0.25, blue: 0.34, alpha: 1.0)
+        static let playerPaddleColor = UIColor(red: 0.97, green: 0.84, blue: 0.33, alpha: 1.0)
+        static let enemyPaddleColor = UIColor(red: 0.99, green: 0.43, blue: 0.33, alpha: 1.0)
+        static let ballColor = UIColor(red: 0.74, green: 0.98, blue: 0.98, alpha: 1.0)
+        static let lineColor = UIColor(red: 0.50, green: 0.87, blue: 0.91, alpha: 0.4)
+        static let scoreColor = UIColor(red: 0.90, green: 0.96, blue: 1.0, alpha: 1.0)
+    }
+
+    enum CPUDifficulty: String, CaseIterable {
+        case easy
+        case regular
+        case hard
+        case beast
+
+        var title: String {
+            switch self {
+            case .easy:
+                return "Easy"
+            case .regular:
+                return "Regular"
+            case .hard:
+                return "Hard"
+            case .beast:
+                return "Beast"
+            }
+        }
+
+        var speedMultiplier: CGFloat {
+            switch self {
+            case .easy:
+                return 0.75
+            case .regular:
+                return 1.0
+            case .hard:
+                return 1.2
+            case .beast:
+                return 1.45
+            }
+        }
+
+        var progressionMultiplier: CGFloat {
+            switch self {
+            case .easy:
+                return 0.8
+            case .regular:
+                return 1.0
+            case .hard:
+                return 1.1
+            case .beast:
+                return 1.25
+            }
+        }
+
+        var speedCapMultiplier: CGFloat {
+            switch self {
+            case .easy:
+                return 0.95
+            case .regular:
+                return 1.0
+            case .hard:
+                return 1.2
+            case .beast:
+                return 1.45
+            }
+        }
+
+        var slowdownInterval: UInt8 {
+            switch self {
+            case .easy:
+                return 3
+            case .regular:
+                return 8
+            case .hard:
+                return 14
+            case .beast:
+                return 0
+            }
+        }
+
+        var slowdownFactor: CGFloat {
+            switch self {
+            case .easy:
+                return 0.15
+            case .regular:
+                return 0.2
+            case .hard:
+                return 0.45
+            case .beast:
+                return 1.0
+            }
+        }
+    }
+
     // MARK: - Overriden Properties
 
     /// Эта переопределенная переменная определяет допустимые ориентации экрана
@@ -64,6 +166,29 @@ class PongViewController: UIViewController {
 
     var enemyPaddleUpdatesCounter: UInt8 = 0
 
+    var enemyScore: Int = 0 {
+        didSet {
+            updateUserScoreLabel()
+        }
+    }
+
+    var bestUserScore: Int = UserDefaults.standard.integer(forKey: DefaultsKey.bestScore) {
+        didSet {
+            UserDefaults.standard.set(bestUserScore, forKey: DefaultsKey.bestScore)
+        }
+    }
+
+    var isMatchOver: Bool = false
+    var cpuDifficulty: CPUDifficulty = .regular {
+        didSet {
+            UserDefaults.standard.set(cpuDifficulty.rawValue, forKey: DefaultsKey.cpuDifficulty)
+            updateUserScoreLabel()
+        }
+    }
+
+    private let backgroundGradientLayer = CAGradientLayer()
+    private var hasPresentedDifficultyPicker = false
+
     // NOTE: Все переменные ниже вплоть до 74-ой строки необходимы для настроек физики
     // Мы не будем вдаваться в подробности того, что это такое и как устроено
     var dynamicAnimator: UIDynamicAnimator?
@@ -98,6 +223,10 @@ class PongViewController: UIViewController {
     var userScore: Int = 0 {
         didSet {
             /// При каждом обновлении значения переменной - обновляем текст в лэйбле
+            if userScore > bestUserScore {
+                bestUserScore = userScore
+            }
+
             updateUserScoreLabel()
         }
     }
@@ -130,6 +259,11 @@ class PongViewController: UIViewController {
 
         // NOTE: Включаем динамику взаимодействия
         self.enableDynamics()
+
+        if !hasPresentedDifficultyPicker {
+            hasPresentedDifficultyPicker = true
+            presentCPUDifficultyPicker(forceSelection: false)
+        }
     }
 
     /// Эта функция вызывается, когда экран первый раз отрисовал весь свой интерфейс
@@ -138,6 +272,12 @@ class PongViewController: UIViewController {
 
         // NOTE: Устанавливаем шару радиус скругления равный половине высоты
         ballView.layer.cornerRadius = ballView.bounds.size.height / 2
+        userPaddleView.layer.cornerRadius = userPaddleView.bounds.height / 2
+        enemyPaddleView.layer.cornerRadius = enemyPaddleView.bounds.height / 2
+        ballView.layer.shadowPath = UIBezierPath(ovalIn: ballView.bounds).cgPath
+        userPaddleView.layer.shadowPath = UIBezierPath(roundedRect: userPaddleView.bounds, cornerRadius: userPaddleView.bounds.height / 2).cgPath
+        enemyPaddleView.layer.shadowPath = UIBezierPath(roundedRect: enemyPaddleView.bounds, cornerRadius: enemyPaddleView.bounds.height / 2).cgPath
+        backgroundGradientLayer.frame = view.bounds
     }
 
     /// Эта функция обрабатывает начало всех касаний экрана
@@ -164,8 +304,17 @@ class PongViewController: UIViewController {
     /// - указывает что при следующем нажатии мяч должен запуститься
     ///
     private func configurePongGame() {
+        if
+            let savedDifficultyRawValue = UserDefaults.standard.string(forKey: DefaultsKey.cpuDifficulty),
+            let savedDifficulty = CPUDifficulty(rawValue: savedDifficultyRawValue)
+        {
+            cpuDifficulty = savedDifficulty
+        }
+
         // NOTE: Настраиваем лэйбл со счетом игрока
         updateUserScoreLabel()
+        applyGameVisualStyle()
+        configureDifficultySelectionHandling()
 
         // NOTE: Включаем обработку жеста движения пальцем по экрану
         self.enabledPanGestureHandling()
@@ -182,6 +331,89 @@ class PongViewController: UIViewController {
     }
 
     private func updateUserScoreLabel() {
-        userScoreLabel.text = "\(userScore)"
+        userScoreLabel.text = "You: \(userScore) | CPU: \(enemyScore) | Best: \(bestUserScore) | \(cpuDifficulty.title)"
+    }
+
+    private func applyGameVisualStyle() {
+        backgroundGradientLayer.colors = [
+            GameStyle.fieldBackgroundTopColor.cgColor,
+            GameStyle.fieldBackgroundBottomColor.cgColor
+        ]
+        backgroundGradientLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
+        backgroundGradientLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
+        backgroundGradientLayer.frame = view.bounds
+        if backgroundGradientLayer.superlayer == nil {
+            view.layer.insertSublayer(backgroundGradientLayer, at: 0)
+        }
+
+        lineView.backgroundColor = GameStyle.lineColor
+
+        enemyPaddleView.backgroundColor = GameStyle.enemyPaddleColor
+        enemyPaddleView.layer.cornerRadius = enemyPaddleView.bounds.height / 2
+        enemyPaddleView.layer.shadowColor = GameStyle.enemyPaddleColor.cgColor
+        enemyPaddleView.layer.shadowOpacity = 0.35
+        enemyPaddleView.layer.shadowOffset = CGSize(width: 0, height: 4)
+        enemyPaddleView.layer.shadowRadius = 10
+
+        userPaddleView.backgroundColor = GameStyle.playerPaddleColor
+        userPaddleView.layer.cornerRadius = userPaddleView.bounds.height / 2
+        userPaddleView.layer.shadowColor = GameStyle.playerPaddleColor.cgColor
+        userPaddleView.layer.shadowOpacity = 0.35
+        userPaddleView.layer.shadowOffset = CGSize(width: 0, height: 4)
+        userPaddleView.layer.shadowRadius = 10
+
+        ballView.backgroundColor = GameStyle.ballColor
+        ballView.layer.shadowColor = GameStyle.ballColor.cgColor
+        ballView.layer.shadowOpacity = 0.45
+        ballView.layer.shadowOffset = .zero
+        ballView.layer.shadowRadius = 10
+
+        userScoreLabel.textColor = GameStyle.scoreColor
+        userScoreLabel.font = .monospacedDigitSystemFont(ofSize: 18, weight: .bold)
+        userScoreLabel.adjustsFontSizeToFitWidth = true
+        userScoreLabel.minimumScaleFactor = 0.7
+        userScoreLabel.numberOfLines = 1
+        userScoreLabel.layer.shadowColor = UIColor.black.cgColor
+        userScoreLabel.layer.shadowOpacity = 0.35
+        userScoreLabel.layer.shadowOffset = CGSize(width: 0, height: 2)
+        userScoreLabel.layer.shadowRadius = 4
+    }
+
+    private func configureDifficultySelectionHandling() {
+        userScoreLabel.isUserInteractionEnabled = true
+
+        let tapGesture = UITapGestureRecognizer(
+            target: self,
+            action: #selector(handleScoreLabelTap)
+        )
+        userScoreLabel.addGestureRecognizer(tapGesture)
+    }
+
+    @objc private func handleScoreLabelTap() {
+        presentCPUDifficultyPicker(forceSelection: false)
+    }
+
+    private func presentCPUDifficultyPicker(forceSelection: Bool) {
+        guard presentedViewController == nil else { return }
+
+        let alertController = UIAlertController(
+            title: "CPU Difficulty",
+            message: "Select challenge level",
+            preferredStyle: .alert
+        )
+
+        CPUDifficulty.allCases.forEach { difficulty in
+            alertController.addAction(
+                UIAlertAction(title: difficulty.title, style: .default) { [weak self] _ in
+                    self?.cpuDifficulty = difficulty
+                }
+            )
+        }
+
+        if !forceSelection {
+            alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        }
+
+        present(alertController, animated: true)
     }
 }

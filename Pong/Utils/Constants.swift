@@ -16,7 +16,10 @@ enum Constants {
     static let ballTag: Int = 3
 
     static let enemyPaddleMaxSpeed: CGFloat = 24
+    static let enemyPaddleDifficultyStep: CGFloat = 2
+    static let enemyPaddleMaxSpeedCap: CGFloat = 34
     static let ballAccelerationFactor: CGFloat = 0.04
+    static let matchPointsToWin: Int = 5
 
     static let contactThreshold: CGFloat = 5.0
 
