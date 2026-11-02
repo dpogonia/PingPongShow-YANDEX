@@ -19,8 +19,8 @@ UIKit, UIKit Dynamics, AVFoundation, Storyboard. iOS 14, portrait only.
 ## Run
 
 ```bash
-git clone https://github.com/dpogonia/PingPongShow.git
-cd PingPongShow
+git clone https://github.com/dpogonia/PingPongShow-Yandex.git
+cd PingPongShow-Yandex
 open PingPongShow.xcodeproj
 ```
 
